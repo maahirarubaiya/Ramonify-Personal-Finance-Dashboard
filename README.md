@@ -1,176 +1,167 @@
-Ramonify — Personal Finance Dashboard
-Ramonify is a data-driven personal finance dashboard designed to help students understand their spending patterns through accessible visualizations and plain-language insights. Built with machine learning and interactive data analysis, Ramonify empowers users to make informed financial decisions and plan for their financial future.
-Overview
-Users can upload a transaction-level CSV file to:
+# Ramonify — Personal Finance Dashboard
 
-Analyze monthly income, expenses, and net cash flow with interactive charts
-Identify top spending categories by month
-Receive personalized, plain-English budgeting tips
-Get automated overspending warnings based on historical patterns
-Simulate "what-if" budget scenarios to test different spending strategies
-View machine learning-powered forecasts of next month's cash flow
-Automatically categorize uncategorized transactions using ML
-Download summarized data for further analysis
+A data-driven personal finance dashboard designed to help students understand their spending patterns through interactive visualizations, machine learning-powered insights, and scenario planning tools.
 
-This project focuses on financial literacy, accessibility, and practical insights, especially for first-generation college students and underserved populations who may lack access to traditional financial planning tools.
-Features
-Machine Learning Auto-Categorization
-Ramonify includes a trained classifier that automatically categorizes uncategorized transactions based on merchant names. The system uses TF-IDF vectorization and Logistic Regression to achieve high accuracy, learning from your existing categorized transactions to predict categories for new entries.
-Interactive Data Visualizations
-Built with Plotly, the dashboard provides interactive charts that allow users to:
+## Overview
 
-Zoom and pan through their financial history
-Hover over data points for detailed information
-View dual-panel visualizations showing both net cash flow and income vs. expenses
-See forecast predictions with color-coded markers
+Ramonify analyzes transaction-level data to provide accessible financial insights in plain language. The application focuses on financial literacy for first-generation and student users by combining automated categorization, predictive forecasting, and what-if scenario simulation to help users make informed budgeting decisions.
 
-Scenario Simulation
-Users can test different budget strategies by adjusting spending in top categories and adding potential income sources. The system recalculates forecasts in real-time, showing the financial impact of proposed changes before committing to them.
-Intelligent Warnings
-The dashboard analyzes spending patterns and provides context-aware warnings when spending exceeds historical averages by a user-defined threshold, helping prevent financial shortfalls.
-Tech Stack
-Core Technologies:
+## Features
 
-Python 3.8+
-pandas (data manipulation)
-NumPy (numerical computing)
-scikit-learn (machine learning models)
-Plotly (interactive visualizations)
-Gradio (web interface)
+### Core Analytics
+- **Monthly Financial Summary**: Track income, expenses, and net cash flow across multiple months
+- **Category Analysis**: Identify top spending categories with detailed breakdowns by month
+- **Interactive Visualizations**: Explore trends with zoomable, hoverable Plotly charts
+- **Cash Flow Forecasting**: Predict next month's financial position using rolling averages and linear regression
 
-Machine Learning:
+### Machine Learning
+- **Automated Transaction Categorization**: ML classifier using TF-IDF vectorization and logistic regression to automatically categorize uncategorized transactions based on merchant names
+- **Model Performance Tracking**: Real-time accuracy metrics displayed to users
 
-TF-IDF Vectorization for text feature extraction
-Logistic Regression for multi-class transaction categorization
-Linear Regression for trend-based forecasting
+### Planning Tools
+- **Overspending Alerts**: Customizable warning system comparing current spending to historical averages
+- **Scenario Simulation**: Test what-if scenarios by adjusting spending categories and income to see projected outcomes
+- **Goal Tracking**: Set monthly savings goals and receive personalized recommendations to achieve them
+- **Actionable Tips**: Plain-English budgeting advice based on spending patterns
 
-Testing:
+### Data Export
+- Download monthly summaries, category breakdowns, and forecast results as CSV files for further analysis
 
-pytest (unit testing framework)
-15+ test cases covering edge cases and integration workflows
+## Tech Stack
 
-Installation
-Prerequisites
+**Backend**: Python, pandas, NumPy, scikit-learn  
+**Visualization**: Plotly  
+**Interface**: Gradio  
+**Testing**: pytest  
+**Machine Learning**: TF-IDF Vectorization, Logistic Regression
 
-Python 3.8 or higher
-pip package manager
+## Installation
 
-Setup
+### Prerequisites
+- Python 3.8 or higher
+- pip package manager
 
-Clone the repository:
+### Setup
 
-bashgit clone https://github.com/yourusername/ramonify.git
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/ramonify.git
 cd ramonify
+```
 
-Install dependencies:
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-bashpip install -r requirements.txt
+3. Run the application:
+```bash
+python ramonify.py
+```
 
-Run the application:
+4. Open your browser to the provided local URL (typically `http://localhost:7860`)
 
-bashpython ramonify.py
+## Usage
 
-Open your browser and navigate to the local URL provided by Gradio (typically http://127.0.0.1:7860)
+### Input Data Format
 
-Usage
-Input Data Format
-Ramonify requires a CSV file with the following columns:
-ColumnTypeDescriptionExampledatestringTransaction date in YYYY-MM-DD format2024-01-15amountfloatTransaction amount in dollars45.99categorystringSpending category (can be empty for auto-categorization)GroceriesmerchantstringMerchant or source nameWhole FoodstypestringEither "income" or "expense"expense
+Upload a CSV file with the following required columns:
+- `date`: Transaction date in YYYY-MM-DD format
+- `amount`: Transaction amount as a number
+- `category`: Spending category (e.g., "Groceries", "Dining")
+- `merchant`: Merchant or payee name
+- `type`: Either "income" or "expense"
 
-Example CSV:
-csvdate,amount,category,merchant,type
-2024-01-01,100.50,Groceries,Whole Foods,expense
-2024-01-05,2000.00,Salary,Employer,income
-2024-01-10,45.99,Dining,Chipotle,expense
-A sample transactions.csv file is included in the repository for testing.
-Running the Dashboard
+Example:
+```csv
+date,amount,category,merchant,type
+2024-01-15,45.50,Groceries,Whole Foods,expense
+2024-01-20,2000.00,Salary,Employer,income
+2024-01-22,12.99,Dining,Chipotle,expense
+```
 
-Click "Upload transactions.csv" and select your CSV file
-Adjust the overspending threshold slider to set your warning sensitivity
-Use scenario sliders to test different budget strategies
-Set your monthly savings goal to track progress
-View insights, warnings, and forecasts generated by the system
-Download processed data files for further analysis
+### Using the Dashboard
 
-Project Structure
+1. **Upload Transactions**: Use the file upload interface to load your CSV
+2. **Configure Settings**: 
+   - Adjust overspending threshold (10-50%)
+   - Set tip percentage for budget recommendations
+   - Enter monthly savings goal
+3. **Run Scenario Simulations**:
+   - Adjust top spending categories by percentage
+   - Add projected additional income
+   - View impact on financial forecast
+4. **Review Insights**: 
+   - Check spending alerts and warnings
+   - Read personalized tips
+   - Download detailed reports
+
+### Automated Categorization
+
+The system automatically categorizes transactions with missing categories if at least 10 categorized transactions are present in your dataset. The ML model learns from your existing categorization patterns and applies them to new transactions.
+
+## Project Structure
+
+```
 ramonify/
-├── ramonify.py              # Main application with Gradio interface
+├── ramonify.py              # Main application code
 ├── test_ramonify.py         # Comprehensive unit tests
 ├── requirements.txt         # Python dependencies
 ├── transactions.csv         # Sample transaction data
 └── README.md               # Project documentation
-Testing
-Ramonify includes a comprehensive test suite covering:
+```
 
-Data validation and cleaning
-Monthly summary calculations
-Machine learning model training with various data sizes
-Auto-categorization accuracy
-Forecasting algorithms
-Edge cases (empty data, negative amounts, duplicate entries)
-Full integration pipeline
+## Testing
 
-Running Tests
-bashpytest test_ramonify.py -v
-Expected output:
-test_ramonify.py::test_sample_transactions_structure PASSED
-test_ramonify.py::test_calculate_monthly_summary_basic PASSED
-test_ramonify.py::test_train_classifier_with_sufficient_data PASSED
-...
-==================== 15 passed in 2.34s ====================
-Key Algorithms
-Forecasting
+Run the test suite to verify functionality:
 
-Rolling Average: 3-month moving average of net cash flow for short-term prediction
-Linear Regression: Trend-based forecasting using historical patterns
+```bash
+pytest test_ramonify.py -v
+```
 
-Categorization
+The test suite includes:
+- Data validation and edge case handling
+- Monthly summary calculation accuracy
+- ML classifier training and prediction
+- Forecasting algorithm verification
+- Integration tests for complete workflows
 
-Feature Extraction: TF-IDF vectorization of merchant names with bigram support
-Classification: Multi-class logistic regression with 1000 max iterations
-Validation: Train-test split with accuracy reporting
+Test coverage includes 15+ test cases covering critical functionality and edge cases.
 
-Scenario Simulation
+## Design Philosophy
 
-Impact Calculation: Percentage-based adjustments to top spending categories
-Forecast Adjustment: Real-time recalculation of predicted cash flow based on user inputs
+Ramonify was built with the following principles:
 
-Design Philosophy
-Ramonify is built with the following principles:
-Accessibility First: Plain-language explanations replace financial jargon. Insights are actionable and easy to understand for users with limited financial literacy.
-Student-Focused: Designed specifically for college students and young adults who are managing their finances independently for the first time.
-Privacy-Conscious: All data processing happens locally. Transaction data is never stored or transmitted to external servers.
-Actionable Insights: Every warning and tip includes specific, practical recommendations that users can implement immediately.
-Future Enhancements
+**Accessibility First**: Financial insights presented in simple, jargon-free language that anyone can understand, regardless of financial literacy background.
+
+**Student-Centered**: Designed specifically for college students and first-generation users who may be managing finances independently for the first time.
+
+**Actionable Insights**: Every analysis includes concrete, personalized recommendations users can implement immediately.
+
+**Data Privacy**: All processing happens locally; no transaction data is stored or transmitted to external servers.
+
+## Future Enhancements
+
 Potential features for future development:
+- Multi-user support with data persistence
+- Budget templates for common student scenarios
+- Integration with bank APIs for automatic transaction import
+- Mobile-responsive interface
+- Comparative benchmarks against peer spending patterns
+- PDF report generation
 
-Integration with bank APIs for automatic transaction import
-Multi-currency support for international students
-Recurring transaction detection and subscription tracking
-Peer comparison benchmarks (anonymized aggregate data)
-Mobile-responsive interface for on-the-go access
-Export to PDF reports for financial aid offices
-Goal tracking with progress visualization
-Savings recommendations based on spending patterns
+## Contributing
 
-Contributing
-Contributions are welcome. Please follow these guidelines:
+Contributions are welcome. Please open an issue to discuss proposed changes before submitting a pull request.
 
-Fork the repository
-Create a feature branch (git checkout -b feature/AmazingFeature)
-Write tests for new functionality
-Ensure all tests pass (pytest test_ramonify.py -v)
-Commit your changes (git commit -m 'Add AmazingFeature')
-Push to the branch (git push origin feature/AmazingFeature)
-Open a Pull Request
+## License
 
-License
-This project is licensed under the MIT License. See LICENSE file for details.
-Author
-Maahira - Computer Science Student, Northeastern University
-Acknowledgments
-This project was developed with a focus on financial literacy and accessibility for underserved student populations. Special thanks to the open-source community for the excellent tools and libraries that made this project possible.
-Contact
-For questions, feedback, or collaboration opportunities, please open an issue on GitHub or contact via email.
+This project is available under the MIT License.
 
-Built with Python, scikit-learn, and a commitment to making financial planning accessible to everyone.
+## Contact
+
+For questions, feedback, or collaboration inquiries, please open an issue on GitHub.
+
+## Acknowledgments
+
+Built to address financial literacy gaps among student populations, with a focus on making personal finance accessible and actionable for users who may be managing money independently for the first time.
