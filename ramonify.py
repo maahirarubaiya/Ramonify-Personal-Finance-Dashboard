@@ -1,0 +1,517 @@
+"""
+Ramonify — Personal Finance Dashboard
+A data-driven finance tool designed to help students understand spending patterns,
+forecast future cash flow, and simulate budget scenarios.
+
+Author: Maahira
+Tech Stack: Python, pandas, NumPy, scikit-learn, Plotly, Gradio
+"""
+
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from sklearn.linear_model import LogisticRegression
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+import gradio as gr
+import tempfile
+from pathlib import Path
+
+
+def train_category_classifier(df):
+    """
+    Train a machine learning classifier to predict transaction categories based on merchant names.
+    
+    Args:
+        df (pd.DataFrame): Transaction data with 'merchant' and 'category' columns
+        
+    Returns:
+        tuple: (vectorizer, model, accuracy) or (None, None, 0.0) if insufficient data
+        
+    Notes:
+        - Requires at least 10 categorized transactions to train
+        - Uses TF-IDF vectorization on merchant names
+        - Logistic Regression for multi-class classification
+    """
+    # Filter to only categorized expenses
+    categorized = df[(df['type'] == 'expense') & (df['category'].notna()) & (df['category'] != '')].copy()
+    
+    if len(categorized) < 10:
+        return None, None, 0.0
+    
+    # Prepare features and labels
+    X = categorized['merchant'].fillna('unknown').astype(str)
+    y = categorized['category']
+    
+    # Check if we have enough variety
+    if y.nunique() < 2:
+        return None, None, 0.0
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Vectorize merchant names
+    vectorizer = TfidfVectorizer(max_features=100, ngram_range=(1, 2))
+    X_train_vec = vectorizer.fit_transform(X_train)
+    X_test_vec = vectorizer.transform(X_test)
+    
+    # Train classifier
+    model = LogisticRegression(max_iter=1000, random_state=42)
+    model.fit(X_train_vec, y_train)
+    
+    # Calculate accuracy
+    accuracy = model.score(X_test_vec, y_test)
+    
+    return vectorizer, model, accuracy
+
+
+def auto_categorize_transactions(df, vectorizer, model):
+    """
+    Automatically categorize uncategorized transactions using trained ML model.
+    
+    Args:
+        df (pd.DataFrame): Transaction data
+        vectorizer: Trained TfidfVectorizer
+        model: Trained classification model
+        
+    Returns:
+        pd.DataFrame: DataFrame with predicted categories for uncategorized transactions
+        
+    Notes:
+        - Only predicts for expense transactions with missing categories
+        - Preserves existing categories
+    """
+    df = df.copy()
+    
+    # Find uncategorized expenses
+    uncategorized_mask = (df['type'] == 'expense') & (df['category'].isna() | (df['category'] == ''))
+    uncategorized = df[uncategorized_mask]
+    
+    if len(uncategorized) == 0 or vectorizer is None or model is None:
+        return df
+    
+    # Predict categories
+    merchants = uncategorized['merchant'].fillna('unknown').astype(str)
+    merchants_vec = vectorizer.transform(merchants)
+    predictions = model.predict(merchants_vec)
+    
+    # Update dataframe
+    df.loc[uncategorized_mask, 'category'] = predictions
+    
+    return df
+
+
+def calculate_monthly_summary(df):
+    """
+    Calculate monthly income, expenses, and net cash flow.
+    
+    Args:
+        df (pd.DataFrame): Transaction data with 'month', 'type', and 'amount' columns
+        
+    Returns:
+        pd.DataFrame: Monthly summary with income, expense, net, and rolling average columns
+    """
+    monthly_summary = (
+        df.groupby(["month", "type"])["amount"]
+          .sum()
+          .unstack(fill_value=0)
+          .reset_index()
+          .sort_values("month")
+          .reset_index(drop=True)
+    )
+
+    if "income" not in monthly_summary.columns:
+        monthly_summary["income"] = 0.0
+    if "expense" not in monthly_summary.columns:
+        monthly_summary["expense"] = 0.0
+
+    monthly_summary["net"] = monthly_summary["income"] - monthly_summary["expense"]
+    monthly_summary[["income", "expense", "net"]] = monthly_summary[["income", "expense", "net"]].round(2)
+    monthly_summary["rolling_avg_3"] = monthly_summary["net"].rolling(window=3).mean().round(2)
+    
+    return monthly_summary
+
+
+def forecast_next_month(monthly_summary):
+    """
+    Predict next month's net cash flow using rolling average and linear regression.
+    
+    Args:
+        monthly_summary (pd.DataFrame): Monthly summary with historical net cash flow
+        
+    Returns:
+        tuple: (rolling_forecast, regression_forecast) as floats
+    """
+    rolling_forecast = float(monthly_summary["rolling_avg_3"].iloc[-1])
+    
+    # Linear regression trend
+    from sklearn.linear_model import LinearRegression
+    X = np.arange(len(monthly_summary)).reshape(-1, 1)
+    y = monthly_summary["net"].values
+    model = LinearRegression()
+    model.fit(X, y)
+    regression_forecast = float(model.predict(np.array([[len(monthly_summary)]]))[0])
+    
+    return rolling_forecast, regression_forecast
+
+
+def create_interactive_plot(monthly_summary, base_forecast, adjusted_forecast):
+    """
+    Create interactive Plotly visualization of cash flow with forecasts.
+    
+    Args:
+        monthly_summary (pd.DataFrame): Historical monthly data
+        base_forecast (float): Baseline next month forecast
+        adjusted_forecast (float): Scenario-adjusted forecast
+        
+    Returns:
+        plotly.graph_objects.Figure: Interactive figure object
+    """
+    monthly_summary["month_dt"] = pd.to_datetime(monthly_summary["month"])
+    
+    fig = make_subplots(
+        rows=2, cols=1,
+        row_heights=[0.7, 0.3],
+        subplot_titles=("Monthly Net Cash Flow + Forecast", "Income vs Expenses"),
+        vertical_spacing=0.12
+    )
+    
+    # Main line chart
+    fig.add_trace(
+        go.Scatter(
+            x=monthly_summary["month_dt"],
+            y=monthly_summary["net"],
+            mode='lines+markers',
+            name='Historical Net',
+            line=dict(color='#3b82f6', width=2),
+            hovertemplate='%{x|%b %Y}<br>Net: $%{y:,.2f}<extra></extra>'
+        ),
+        row=1, col=1
+    )
+    
+    # Forecast points
+    if len(monthly_summary) > 0:
+        last_date = monthly_summary["month_dt"].iloc[-1]
+        next_month = last_date + pd.DateOffset(months=1)
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[next_month],
+                y=[base_forecast],
+                mode='markers',
+                name='Base Forecast',
+                marker=dict(color='orange', size=12, symbol='circle'),
+                hovertemplate='Base: $%{y:,.2f}<extra></extra>'
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[next_month],
+                y=[adjusted_forecast],
+                mode='markers',
+                name='With Changes',
+                marker=dict(color='green', size=14, symbol='star'),
+                hovertemplate='Adjusted: $%{y:,.2f}<extra></extra>'
+            ),
+            row=1, col=1
+        )
+    
+    # Zero line
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=1, col=1)
+    
+    # Income vs Expense bar chart
+    fig.add_trace(
+        go.Bar(
+            x=monthly_summary["month_dt"],
+            y=monthly_summary["income"],
+            name='Income',
+            marker_color='#10b981',
+            hovertemplate='Income: $%{y:,.2f}<extra></extra>'
+        ),
+        row=2, col=1
+    )
+    
+    fig.add_trace(
+        go.Bar(
+            x=monthly_summary["month_dt"],
+            y=monthly_summary["expense"],
+            name='Expenses',
+            marker_color='#ef4444',
+            hovertemplate='Expenses: $%{y:,.2f}<extra></extra>'
+        ),
+        row=2, col=1
+    )
+    
+    # Update layout
+    fig.update_xaxes(title_text="Month", row=2, col=1)
+    fig.update_yaxes(title_text="Net ($)", row=1, col=1)
+    fig.update_yaxes(title_text="Amount ($)", row=2, col=1)
+    
+    fig.update_layout(
+        height=700,
+        hovermode='x unified',
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig
+
+
+def analyze_transactions(file, overspend_threshold_pct, cut_pct, monthly_goal, 
+                         adjust_cat1_pct, adjust_cat2_pct, extra_income):
+    """
+    Main analysis function: loads data, categorizes transactions, generates insights and forecasts.
+    
+    Args:
+        file: Uploaded CSV file object
+        overspend_threshold_pct (float): Warning threshold percentage (10-50)
+        cut_pct (float): Suggested cut percentage for tips (5-25)
+        monthly_goal (float): User's monthly savings goal in dollars
+        adjust_cat1_pct (float): Scenario adjustment for top category (-50 to 50)
+        adjust_cat2_pct (float): Scenario adjustment for 2nd category (-50 to 50)
+        extra_income (float): Additional income in scenario (dollars)
+        
+    Returns:
+        tuple: (figure, dataframes, insights, warnings, downloads) for Gradio interface
+        
+    Raises:
+        ValueError: If required columns are missing or data format is invalid
+    """
+    # ---------- Load & clean ----------
+    df = pd.read_csv(file.name)
+
+    required = {"date", "amount", "category", "merchant", "type"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+    df["type"] = df["type"].astype(str).str.lower().str.strip()
+
+    if df["date"].isna().any():
+        raise ValueError("Some dates could not be parsed. Use YYYY-MM-DD format.")
+    if df["amount"].isna().any():
+        raise ValueError("Some amounts are not numeric. Fix the amount column.")
+    if not set(df["type"].unique()).issubset({"income", "expense"}):
+        raise ValueError('type must contain only "income" or "expense".')
+
+    df["month"] = df["date"].dt.to_period("M").astype(str)
+
+    # ---------- ML Auto-categorization ----------
+    vectorizer, model, accuracy = train_category_classifier(df)
+    ml_status = "No ML model (need 10+ categorized transactions)"
+    
+    if vectorizer is not None and model is not None:
+        df = auto_categorize_transactions(df, vectorizer, model)
+        ml_status = f"✅ Auto-categorized uncategorized transactions (Model accuracy: {accuracy*100:.1f}%)"
+
+    # ---------- Monthly summary ----------
+    monthly_summary = calculate_monthly_summary(df)
+
+    # ---------- Category analysis ----------
+    expenses = df[df["type"] == "expense"].copy()
+
+    monthly_category = (
+        expenses.groupby(["month", "category"])["amount"]
+                .sum()
+                .reset_index()
+                .sort_values(["month", "amount"], ascending=[True, False])
+    )
+    monthly_category["amount"] = monthly_category["amount"].round(2)
+
+    top3_by_month = (
+        monthly_category.groupby("month")
+                        .head(3)
+                        .reset_index(drop=True)
+    )
+
+    # ---------- Forecasting ----------
+    rolling_forecast, regression_forecast = forecast_next_month(monthly_summary)
+    
+    forecast_df = pd.DataFrame({
+        "method": ["rolling_average_3_month", "linear_regression_trend"],
+        "predicted_next_month_net": [rolling_forecast, regression_forecast]
+    })
+    forecast_df["predicted_next_month_net"] = forecast_df["predicted_next_month_net"].round(2)
+
+    # ---------- Overspending warning ----------
+    last_month = monthly_summary["month"].iloc[-1]
+    last_expense = float(monthly_summary["expense"].iloc[-1])
+    last_income = float(monthly_summary["income"].iloc[-1])
+    last_net = float(monthly_summary["net"].iloc[-1])
+
+    prev_avg_expense = None
+    ratio = 1.0
+    if len(monthly_summary) >= 4:
+        prev_avg_expense = float(monthly_summary["expense"].iloc[:-1].mean())
+        ratio = last_expense / prev_avg_expense if prev_avg_expense > 0 else 1.0
+
+    threshold_ratio = 1.0 + (overspend_threshold_pct / 100.0)
+
+    if last_net < 0 or (prev_avg_expense is not None and ratio >= threshold_ratio):
+        banner_color = "#7f1d1d"
+        banner_text = "⚠️ Spending Alert"
+        sub_text = "Your spending looks high. You may run low on money next month."
+    elif prev_avg_expense is not None and ratio >= 1.0 + max(0.10, overspend_threshold_pct/200.0):
+        banner_color = "#78350f"
+        banner_text = "⚠️ Spending Watch"
+        sub_text = "Your spending is a bit higher than usual. Small cuts can help."
+    else:
+        banner_color = "#14532d"
+        banner_text = "✅ Spending Looks OK"
+        sub_text = "Your spending looks close to your usual pattern."
+
+    if prev_avg_expense is not None:
+        sub_text += f" (This month: ${last_expense:,.2f} | Prior avg: ${prev_avg_expense:,.2f})"
+
+    warning_html = f"""
+    <div style="background-color:{banner_color}; color:white; padding:20px; border-radius:8px; margin:10px 0;">
+      <h3 style="margin:0;">{banner_text}</h3>
+      <p style="margin:5px 0 0 0;">{sub_text}</p>
+    </div>
+    """
+
+    # ---------- Scenario simulation ----------
+    last_month_cats = monthly_category[monthly_category["month"] == last_month]
+
+    cat1_name = "N/A"
+    cat1_amt = 0.0
+    cat2_name = "N/A"
+    cat2_amt = 0.0
+    
+    if len(last_month_cats) > 0:
+        cat1_name = str(last_month_cats.iloc[0]["category"])
+        cat1_amt = float(last_month_cats.iloc[0]["amount"])
+    if len(last_month_cats) > 1:
+        cat2_name = str(last_month_cats.iloc[1]["category"])
+        cat2_amt = float(last_month_cats.iloc[1]["amount"])
+
+    savings_from_cat1 = cat1_amt * (-adjust_cat1_pct / 100.0) if cat1_amt > 0 else 0
+    savings_from_cat2 = cat2_amt * (-adjust_cat2_pct / 100.0) if cat2_amt > 0 else 0
+    total_scenario_impact = savings_from_cat1 + savings_from_cat2 + extra_income
+    
+    base_forecast = float(rolling_forecast)
+    adjusted_forecast = base_forecast + total_scenario_impact
+    
+    scenario_html = f"""
+    <div style="background-color:#1e3a8a; color:white; padding:20px; border-radius:8px; margin:10px 0;">
+      <h3 style="margin:0;">💡 What-If Scenario Results</h3>
+      <div style="margin-top:15px;">
+        <p style="margin:5px 0;"><strong>Current Forecast:</strong> ${base_forecast:,.2f} left next month</p>
+        <p style="margin:5px 0;"><strong>With Your Changes:</strong> ${adjusted_forecast:,.2f} left next month</p>
+        <p style="margin:5px 0; font-size:1.2em;"><strong>Difference:</strong> {'+' if total_scenario_impact >= 0 else ''}${total_scenario_impact:,.2f}</p>
+      </div>
+      <div style="margin-top:15px; padding-top:15px; border-top:1px solid rgba(255,255,255,0.3);">
+        <p style="margin:5px 0; font-size:0.9em;"><em>Your adjustments:</em></p>
+        <ul style="margin:5px 0 0 20px; font-size:0.9em;">
+          <li>{cat1_name}: {'+' if adjust_cat1_pct > 0 else ''}{adjust_cat1_pct}% → {'+' if savings_from_cat1 >= 0 else ''}${savings_from_cat1:,.2f}</li>
+          <li>{cat2_name}: {'+' if adjust_cat2_pct > 0 else ''}{adjust_cat2_pct}% → {'+' if savings_from_cat2 >= 0 else ''}${savings_from_cat2:,.2f}</li>
+          <li>Extra income: +${extra_income:,.2f}</li>
+        </ul>
+      </div>
+    </div>
+    """
+
+    # ---------- Insights ----------
+    cut_fraction = float(cut_pct) / 100.0
+    savings_from_cut = cat1_amt * cut_fraction
+
+    goal_lines = []
+    try:
+        goal = float(monthly_goal) if monthly_goal not in [None, ""] else 0.0
+    except:
+        goal = 0.0
+
+    if goal > 0:
+        if adjusted_forecast >= goal:
+            goal_lines.append(f"🎉 With your scenario changes, you'd meet your ${goal:,.2f} goal!")
+        elif base_forecast >= goal:
+            goal_lines.append(f"You're on track to meet your ${goal:,.2f} goal with current habits.")
+        else:
+            gap = goal - adjusted_forecast
+            goal_lines.append(f"To reach ${goal:,.2f}, you'd need about ${gap:,.2f} more.")
+
+    insights_lines = [
+        f"Month analyzed: {last_month}",
+        f"You earned ${last_income:,.2f} and spent ${last_expense:,.2f}.",
+        f"Money left after spending: ${last_net:,.2f}.",
+        ml_status,
+    ]
+
+    if cat1_name != "N/A":
+        insights_lines.append(f"Biggest spending: {cat1_name} (${cat1_amt:,.2f}).")
+        insights_lines.append(f"Tip: Cutting {cat1_name} by {int(cut_pct)}% could save ${savings_from_cut:,.2f}.")
+
+    insights_lines.extend(goal_lines)
+    insights = "\n".join([f"• {x}" for x in insights_lines])
+
+    # ---------- Create interactive plot ----------
+    fig = create_interactive_plot(monthly_summary, base_forecast, adjusted_forecast)
+
+    # ---------- Download files ----------
+    tmpdir = Path(tempfile.mkdtemp())
+    summary_path = tmpdir / "monthly_summary.csv"
+    top3_path = tmpdir / "top3_by_month.csv"
+    forecast_path = tmpdir / "forecast_results.csv"
+
+    monthly_summary.drop(columns=["month_dt"], errors="ignore").to_csv(summary_path, index=False)
+    top3_by_month.to_csv(top3_path, index=False)
+    forecast_df.to_csv(forecast_path, index=False)
+
+    return (
+        fig,
+        monthly_summary.drop(columns=["month_dt", "rolling_avg_3"], errors="ignore"),
+        top3_by_month,
+        forecast_df,
+        insights,
+        warning_html,
+        scenario_html,
+        str(summary_path),
+        str(top3_path),
+        str(forecast_path),
+    )
+
+
+# ---------- Gradio Interface ----------
+demo = gr.Interface(
+    fn=analyze_transactions,
+    inputs=[
+        gr.File(label="Upload transactions.csv"),
+        gr.Slider(minimum=10, maximum=50, value=25, step=5, 
+                 label="Overspending warning threshold (%)"),
+        gr.Dropdown(choices=[5, 10, 15, 20, 25], value=10, 
+                   label="Tip: cut biggest category by (%)"),
+        gr.Number(value=0, label="Monthly savings goal ($)"),
+        gr.Slider(minimum=-50, maximum=50, value=0, step=5, 
+                 label="📊 Scenario: Adjust top category #1 (%)"),
+        gr.Slider(minimum=-50, maximum=50, value=0, step=5, 
+                 label="📊 Scenario: Adjust top category #2 (%)"),
+        gr.Number(value=0, label="📊 Scenario: Extra monthly income ($)"),
+    ],
+    outputs=[
+        gr.Plot(label="Interactive Cash Flow Analysis"),
+        gr.Dataframe(label="Monthly Summary"),
+        gr.Dataframe(label="Top 3 Spending Categories per Month"),
+        gr.Dataframe(label="Forecast Results"),
+        gr.Textbox(label="Simple Insights & Tips", lines=12),
+        gr.HTML(label="Spending Warning"),
+        gr.HTML(label="What-If Scenario Results"),
+        gr.File(label="Download: monthly_summary.csv"),
+        gr.File(label="Download: top3_by_month.csv"),
+        gr.File(label="Download: forecast_results.csv"),
+    ],
+    title="Ramonify — Personal Finance Dashboard",
+    description="""
+    Upload your transaction CSV to analyze spending patterns with ML-powered insights.
+    Features: Auto-categorization, interactive charts, spending forecasts, and scenario planning.
+    """,
+    examples=None,
+    theme=gr.themes.Soft()
+)
+
+if __name__ == "__main__":
+    demo.launch(share=True)
